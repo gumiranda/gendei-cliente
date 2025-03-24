@@ -1,5 +1,5 @@
 export const whitelabel = {
   isAdmin: false,
-  systemName: "belezix",
+  systemName: "gendei",
   typeSystem: "beleza",
 };
