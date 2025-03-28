@@ -15,84 +15,66 @@ export const getAxios = (token: string) => {
 };
 
 export function setupAPIClient(ctx = undefined) {
-  let cookies: any = ctx;
-  if (!cookies?.["belezixclient.token"]) {
-    cookies = parseCookies();
-  }
-  if (!cookies) {
+  let cookies = ctx ? ctx : parseCookies();
+
+  if (!cookies["belezixclient.token"]) {
     return null;
   }
 
   const api = getAxios(cookies["belezixclient.token"]);
 
   api.interceptors.response.use(
-    (response: any) => response,
-    (error: any) => {
+    (response) => response,
+    async (error) => {
       const originalConfig = error.config;
       originalConfig.retryCount = originalConfig.retryCount || 0;
 
-      if (error?.response?.status === 401) {
-        if (error?.response?.data?.error === "Unauthorized") {
-          cookies = ctx;
-          if (!cookies?.["belezixclient.token"]) {
-            cookies = parseCookies();
-          }
-          const { "belezixclient.refreshToken": refreshToken } = cookies;
-
-          if (!isRefreshing) {
-            isRefreshing = true;
-            api
-              .get("/account/refresh", {
-                headers: { refreshtoken: refreshToken },
-              })
-              .then((response) => {
-                const { accessToken: token, refreshToken: newRefreshToken } =
-                  response?.data;
-                setCookie(undefined, "belezixclient.token", token, {
-                  maxAge: 60 * 60 * 24 * 30, // 30 days
-                  path: "/",
-                });
-                setCookie(null, "belezixclient.refreshToken", newRefreshToken, {
-                  maxAge: 30 * 24 * 60 * 60,
-                  path: "/",
-                });
-                api.defaults.timeout = 15000;
-                api.defaults.headers["Authorization"] = `Bearer ${token}`;
-                api.defaults.headers["refreshtoken"] = `${newRefreshToken}`;
-                failedRequestsQueue.forEach((request: any) =>
-                  request.onSuccess(token),
-                );
-                failedRequestsQueue = [];
-              })
-              .catch((err) => {
-                failedRequestsQueue.forEach((request: any) =>
-                  request.onFailure(err),
-                );
-                failedRequestsQueue = [];
-                if (typeof window === "undefined") {
-                  signOut();
-                }
-              })
-              .finally(() => {
-                isRefreshing = false;
-              });
-          }
-
-          return new Promise((resolve, reject) => {
-            failedRequestsQueue.push({
-              onSuccess: (token: string) => {
-                originalConfig.headers["Authorization"] = `Bearer ${token}`;
-                resolve(api(originalConfig));
-              },
-              onFailure: (err: AxiosError) => {
-                reject(err);
-              },
+      if (error.response?.status === 401 && error.response?.data?.error === "Unauthorized") {
+        if (!isRefreshing) {
+          isRefreshing = true;
+          try {
+            const { "belezixclient.refreshToken": refreshToken } = cookies;
+            const response = await api.get("/account/refresh", {
+              headers: { refreshtoken: refreshToken },
             });
+
+            const { accessToken: token, refreshToken: newRefreshToken } = response.data;
+            setCookie(undefined, "belezixclient.token", token, {
+              maxAge: 60 * 60 * 24 * 30, // 30 days
+              path: "/",
+            });
+            setCookie(undefined, "belezixclient.refreshToken", newRefreshToken, {
+              maxAge: 30 * 24 * 60 * 60,
+              path: "/",
+            });
+
+            api.defaults.headers["Authorization"] = `Bearer ${token}`;
+            api.defaults.headers["refreshtoken"] = `${newRefreshToken}`;
+
+            failedRequestsQueue.forEach((request) => request.onSuccess(token));
+            failedRequestsQueue = [];
+          } catch (err) {
+            failedRequestsQueue.forEach((request) => request.onFailure(err));
+            failedRequestsQueue = [];
+            if (typeof window === "undefined") {
+              signOut();
+            }
+          } finally {
+            isRefreshing = false;
+          }
+        }
+
+        return new Promise((resolve, reject) => {
+          failedRequestsQueue.push({
+            onSuccess: (token) => {
+              originalConfig.headers["Authorization"] = `Bearer ${token}`;
+              resolve(api(originalConfig));
+            },
+            onFailure: (err) => {
+              reject(err);
+            },
           });
-        }
-        if (typeof window === "undefined") {
-          signOut();
-        }
+        });
       }
 
       if (originalConfig.retryCount < MAX_RETRIES) {
@@ -101,7 +83,7 @@ export function setupAPIClient(ctx = undefined) {
       }
 
       return Promise.reject(error);
-    },
+    }
   );
 
   return api;
