@@ -1,8 +1,10 @@
-/* eslint-disable prefer-const */
 import axios, { AxiosError } from "axios";
 import { destroyCookie, parseCookies, setCookie } from "nookies";
+
 let isRefreshing = false;
 let failedRequestsQueue: any = [];
+const MAX_RETRIES = 4;
+
 export const getAxios = (token: string) => {
   return axios.create({
     baseURL: process.env.NEXT_PUBLIC_API_URL,
@@ -11,6 +13,7 @@ export const getAxios = (token: string) => {
     },
   });
 };
+
 export function setupAPIClient(ctx = undefined) {
   let cookies: any = ctx;
   if (!cookies?.["belezixclient.token"]) {
@@ -19,10 +22,15 @@ export function setupAPIClient(ctx = undefined) {
   if (!cookies) {
     return null;
   }
+
   const api = getAxios(cookies["belezixclient.token"]);
+
   api.interceptors.response.use(
     (response: any) => response,
     (error: any) => {
+      const originalConfig = error.config;
+      originalConfig.retryCount = originalConfig.retryCount || 0;
+
       if (error?.response?.status === 401) {
         if (error?.response?.data?.error === "Unauthorized") {
           cookies = ctx;
@@ -30,7 +38,7 @@ export function setupAPIClient(ctx = undefined) {
             cookies = parseCookies();
           }
           const { "belezixclient.refreshToken": refreshToken } = cookies;
-          const originalConfig = error.config;
+
           if (!isRefreshing) {
             isRefreshing = true;
             api
@@ -69,6 +77,7 @@ export function setupAPIClient(ctx = undefined) {
                 isRefreshing = false;
               });
           }
+
           return new Promise((resolve, reject) => {
             failedRequestsQueue.push({
               onSuccess: (token: string) => {
@@ -85,16 +94,24 @@ export function setupAPIClient(ctx = undefined) {
           signOut();
         }
       }
+
+      if (originalConfig.retryCount < MAX_RETRIES) {
+        originalConfig.retryCount += 1;
+        return api(originalConfig);
+      }
+
       return Promise.reject(error);
     },
   );
+
   return api;
 }
+
 export const api = setupAPIClient();
+
 export function signOut() {
-  destroyCookie(undefined, "belezixclient.token");
-  destroyCookie(undefined, "belezixclient.refreshToken");
-  destroyCookie(undefined, "belezixclient.user");
-  destroyCookie(undefined, "belezixclient.cache");
-  destroyCookie(undefined, "belezixclient.photo");
+  const allCookies = parseCookies();
+  Object.keys(allCookies).forEach((cookieName) => {
+    destroyCookie(undefined, cookieName);
+  });
 }
