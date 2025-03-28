@@ -9,7 +9,7 @@ import { HorizontalList } from "../_components/templates/horizontal-list";
 import { TweetFormContainer } from "./_components/molecules/tweet-form";
 import { TweetList } from "./_components/molecules/tweet-list";
 import { getTweets } from "@/slices/belezix/entidades/tweet/tweet.api";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 export const metadata: Metadata = {
   title: `${whitelabel.systemName} | Agendamentos Online`,
@@ -17,17 +17,23 @@ export const metadata: Metadata = {
 };
 
 async function getParsedCookies() {
-  const cookieStore = (await cookies()).getAll();
+  const cookieStore = cookies();
+  const cookieHeader = cookieStore.get('cookie') || '';
+  const parsedCookies = parseCookies(cookieHeader);
 
-  if (!cookieStore) {
-    return null;
-  }
-
-  const parsedCookies = parseCookies(cookieStore);
   if (!parsedCookies?.["belezixclient.token"]) {
     return null;
   }
   return parsedCookies;
+}
+
+function clearCookies() {
+  const cookieStore = cookies();
+  const allCookies = cookieStore.getAll();
+
+  allCookies.forEach(({ name }) => {
+    headers().set('Set-Cookie', `${name}=; Max-Age=0; path=/;`);
+  });
 }
 
 async function handleRequests(cookies: any) {
@@ -41,9 +47,11 @@ async function handleRequests(cookies: any) {
         });
     return { requests, totalCount };
   } catch (error: any) {
+    clearCookies(); // Limpar cookies em caso de erro
     return { requests: [], totalCount: 0 };
   }
 }
+
 async function handleTweets(cookies: any) {
   try {
     const { tweets = [], totalCount = 0 } = await getTweets(1, cookies, {
@@ -53,9 +61,11 @@ async function handleTweets(cookies: any) {
     });
     return { tweets, totalCount };
   } catch (error: any) {
+    clearCookies(); // Limpar cookies em caso de erro
     return { tweets: [], totalCount: 0 };
   }
 }
+
 const handleOwners = async (cookies: any) => {
   try {
     const popularOwners = await getOwnersPublic(1, cookies, {
@@ -75,9 +85,11 @@ const handleOwners = async (cookies: any) => {
       : [];
     return { owners, newOwners };
   } catch (error: any) {
+    clearCookies(); // Limpar cookies em caso de erro
     return { owners: [], newOwners: [] };
   }
 };
+
 export default async function Page() {
   const cookies = await getParsedCookies();
   const { requests, totalCount } = await handleRequests(cookies);
