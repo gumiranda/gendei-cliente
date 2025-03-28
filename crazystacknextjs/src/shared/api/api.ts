@@ -1,3 +1,4 @@
+ /* eslint-disable prefer-const */
 import axios, { AxiosError } from "axios";
 import { destroyCookie, parseCookies, setCookie } from "nookies";
 
